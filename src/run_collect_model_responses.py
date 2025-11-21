@@ -18,6 +18,13 @@ def parse_args():
     parser.add_argument('--language_model', type=str, default='gpt-3.5-turbo-instruct', help='name of language model to collect responses from')
     parser.add_argument('--language_model_max_tokens', type=int, default=256, help='max tokens for language model. Only relevant for completion GPT (since default max tokens is inf for Chat GPT.')
     parser.add_argument('--language_model_temperature', type=float, default=0.7, help='temperature to use for language model when collecting responses')
+    
+    # NNsight-specific arguments
+    parser.add_argument('--remote', action='store_true', default=True, help='use remote NDIF execution for NNsight models (saves local GPU memory, default: True)')
+    parser.add_argument('--local', action='store_true', help='use local execution instead of remote (overrides --remote)')
+    parser.add_argument('--device_map', type=str, default='auto', help='device mapping for NNsight models (auto, cuda, cpu)')
+    parser.add_argument('--nnsight_api_key', type=str, default=None, help='NNsight API key (optional if set globally)')
+    
     parser.add_argument('--cot', action='store_true', help='whether to use CoT when prompting model to analyze')
     parser.add_argument('--few_shot', action='store_true', help='whether to use few shot when prompting model to analyze')
     parser.add_argument('--knn_rank', action='store_true', help='whether to use knn rank when prompting model to analyze (for now, only applicable to MedQA)')
@@ -83,21 +90,39 @@ def collect_model_responses(dataset, cnt, example_idx, language_model, prompting
 
 def main():
     args = parse_args()
+    
+    # Handle local flag override
+    if args.local:
+        args.remote = False
+    
     print("ARGS...")
     print(args)
     validate_args(args)
+    
     # init dataset
     dataset = get_dataset(args.dataset, args.dataset_path)
-    # init language model
-    language_model = get_language_model(args.language_model, max_tokens=args.language_model_max_tokens, temperature=args.language_model_temperature)
+    
+    # init language model with NNsight-specific parameters
+    language_model = get_language_model(
+        args.language_model, 
+        max_tokens=args.language_model_max_tokens, 
+        temperature=args.language_model_temperature,
+        api_key=args.nnsight_api_key,
+        device_map=args.device_map,
+        remote=args.remote
+    )
+    
     # init prompting strategy
     prompting_strategy = PromptingStrategy(args.cot, args.few_shot, args.knn_rank, args.few_shot_prompt_name, args.add_instr)
+    
     # create output dir
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
+    
     if len(args.example_idxs) == 0:
         end_idx = len(dataset) if args.n_examples is None else args.example_idx_start + args.n_examples
         args.example_idxs = range(args.example_idx_start, end_idx)
+    
     failed_idxs = dict()
     for cnt, example_idx in enumerate(args.example_idxs):
         try:
@@ -105,6 +130,7 @@ def main():
         except Exception as e:
             print(f"ERROR: {e}")
             failed_idxs[example_idx] = str(e)
+    
     # save failed examples
     with open(os.path.join(args.output_dir, 'failed_examples.json'), 'w') as f:
         json.dump(failed_idxs, f)

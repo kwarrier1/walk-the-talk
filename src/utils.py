@@ -5,6 +5,7 @@ from my_datasets.medqa import MedQADataset
 from language_models.chat_gpt import ChatGPT
 from language_models.claude import Claude
 from language_models.completion_gpt import CompletionGPT
+from language_models.NNSight import NNsightModel 
 
 
 ####################################################################################################
@@ -148,15 +149,38 @@ def enumerate_interventions(factors, factor_settings, k_hop=None, include_no_int
 ## Class Factory Helper Functions ##
 ####################################################################################################
 
-def get_language_model(model_name, max_tokens=256, temperature=0.7):
+def get_language_model(model_name, max_tokens=256, temperature=0.7, api_key=None, device_map='auto', remote=False):
+    """
+    Factory function to get the appropriate language model instance.
+    
+    Args:
+        model_name: name of the model
+        max_tokens: maximum tokens to generate
+        temperature: sampling temperature
+        api_key: API key for NNsight models (optional)
+        device_map: device mapping for NNsight models (default: 'auto')
+        remote: whether to use remote NDIF execution for NNsight models
+    
+    Returns:
+        Model instance
+    """
     if 'gpt-4' in model_name or model_name == "gpt-3.5-turbo-0613":
         return ChatGPT(model_name, temperature=temperature)
     elif model_name == 'text-davinci-003' or model_name == 'gpt-3.5-turbo-instruct':
         return CompletionGPT(model_name, max_tokens=max_tokens, temperature=temperature)
-    elif 'claude'in model_name:
+    elif 'claude' in model_name:
         return Claude(model_name, max_tokens=max_tokens, temperature=temperature)
     else:
-        raise ValueError(f"Model {model_name} not supported.")
+        # Default to NNsight for any HuggingFace model
+        # Examples: "openai-community/gpt2", "meta-llama/Llama-2-7b-hf", etc.
+        return NNsightModel(
+            model_name, 
+            api_key=api_key,
+            temperature=temperature, 
+            max_tokens=max_tokens,
+            device_map=device_map,
+            remote=remote
+        )
     
 
 def get_dataset(dataset_name, dataset_path):
